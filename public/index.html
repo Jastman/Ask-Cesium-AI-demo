@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ask Cesium AI</title>
+
+  <!-- CesiumJS -->
+  <script src="https://cesium.com/downloads/cesiumjs/releases/1.122/Build/Cesium/Cesium.js"></script>
+  <link href="https://cesium.com/downloads/cesiumjs/releases/1.122/Build/Cesium/Widgets/widgets.css" rel="stylesheet" />
+
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<div id="app">
+
+  <!-- ── Header ── -->
+  <header id="header">
+    <span class="globe-icon">🌍</span>
+    <h1>Ask Cesium AI</h1>
+    <span class="subtitle">Powered by Claude</span>
+    <div class="spacer"></div>
+    <button id="new-chat-btn" title="Start a new conversation">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M12 5v14M5 12h14"/>
+      </svg>
+      New conversation
+    </button>
+  </header>
+
+  <!-- ── Main ── -->
+  <main id="main">
+
+    <!-- Cesium globe -->
+    <div id="cesium-container">
+      <div id="cesiumContainer"></div>
+
+      <!-- Loading overlay shown while Cesium initializes -->
+      <div id="cesium-loading">
+        <div class="spinner"></div>
+        <p>Initializing 3D globe…</p>
+      </div>
+    </div>
+
+    <!-- Chat panel -->
+    <div id="chat-panel">
+
+      <div id="messages">
+        <!-- Welcome screen (replaced by messages after first query) -->
+        <div id="welcome">
+          <div class="welcome-icon">🌍</div>
+          <h2>Ask Cesium AI</h2>
+          <p>Ask any question about Earth — I'll fly the 3D globe there, add markers, and surface real geospatial data.</p>
+          <div class="starter-prompts">
+            <button class="starter-btn" data-query="Show me the Eiffel Tower in Paris">
+              <span class="starter-icon">🗼</span> Show me the Eiffel Tower
+            </button>
+            <button class="starter-btn" data-query="Map active volcanoes in Indonesia">
+              <span class="starter-icon">🌋</span> Map active volcanoes in Indonesia
+            </button>
+            <button class="starter-btn" data-query="Show me the 5 highest mountain peaks in the Himalayas">
+              <span class="starter-icon">🏔️</span> Highest Himalayan peaks
+            </button>
+            <button class="starter-btn" data-query="Fly to the Amazon rainforest in Brazil and describe it">
+              <span class="starter-icon">🌿</span> Fly to the Amazon rainforest
+            </button>
+            <button class="starter-btn" data-query="Show major international airports in Japan">
+              <span class="starter-icon">✈️</span> Airports in Japan
+            </button>
+            <button class="starter-btn" data-query="Show me the Great Barrier Reef from above at sunset">
+              <span class="starter-icon">🐠</span> Great Barrier Reef at sunset
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Input -->
+      <div id="input-area">
+        <div id="input-row">
+          <textarea
+            id="query-input"
+            placeholder="Ask about any place on Earth…"
+            rows="1"
+            autocomplete="off"
+            spellcheck="true"
+          ></textarea>
+          <button id="send-btn" title="Send (Enter)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M22 2L11 13"/><path d="M22 2L15 22 11 13 2 9l20-7z"/>
+            </svg>
+          </button>
+        </div>
+        <div id="input-hint">Enter to send &nbsp;·&nbsp; Shift+Enter for new line</div>
+      </div>
+
+    </div><!-- /chat-panel -->
+
+  </main>
+
+</div><!-- /app -->
+
+<!-- Error toast -->
+<div id="error-toast"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
