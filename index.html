@@ -19,11 +19,21 @@
     <p class="modal-subtitle">AI-powered geospatial data explorer. Ask anything about Earth — the AI finds verified data and builds the map for you.</p>
 
     <div class="modal-section">
-      <label class="modal-label">
-        Anthropic API Key <span class="required">*</span>
-        <a href="https://console.anthropic.com/" target="_blank" class="get-key-link">Get free key →</a>
+      <label class="modal-label">AI Provider</label>
+      <select id="input-provider">
+        <option value="groq">Groq — Llama 3.3 70B (free, 14k req/day)</option>
+        <option value="openrouter">OpenRouter — free models available</option>
+        <option value="anthropic">Anthropic Claude (paid)</option>
+      </select>
+    </div>
+
+    <div class="modal-section">
+      <label class="modal-label" id="api-key-label">
+        API Key <span class="required">*</span>
+        <a id="api-key-link" href="https://console.groq.com/" target="_blank" class="get-key-link">Get free key →</a>
       </label>
-      <input id="input-anthropic-key" type="password" placeholder="sk-ant-api03-..." autocomplete="off" />
+      <input id="input-api-key" type="password" placeholder="gsk_..." autocomplete="off" />
+      <span id="api-key-hint" class="modal-hint">Free tier · No credit card required</span>
     </div>
 
     <div class="modal-section">
@@ -57,7 +67,7 @@
   <header id="header">
     <span class="header-logo">🌍</span>
     <h1>Ask Cesium AI</h1>
-    <span class="header-badge">Powered by Claude</span>
+    <span class="header-badge" id="header-badge">Powered by Llama 3.3</span>
     <div class="spacer"></div>
     <button id="settings-btn" title="Settings / API Keys">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

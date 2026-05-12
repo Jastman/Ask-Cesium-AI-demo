@@ -1,8 +1,31 @@
 /* ── Constants ───────────────────────────────────────────────────────────── */
 const MAX_MARKERS   = 2000;
 const MAX_LOOPS     = 14;
-const MODEL         = 'claude-sonnet-4-6';
 const CESIUM_VER    = '1.122';
+
+const PROVIDER_INFO = {
+  anthropic:  {
+    placeholder: 'sk-ant-api03-…',
+    hint:        'Paid API — console.anthropic.com',
+    link:        'https://console.anthropic.com/',
+    linkText:    'Get key →',
+    badge:       'Powered by Claude',
+  },
+  groq: {
+    placeholder: 'gsk_…',
+    hint:        'Free tier · 14,400 req/day · No credit card required',
+    link:        'https://console.groq.com/',
+    linkText:    'Get free key →',
+    badge:       'Powered by Llama 3.3',
+  },
+  openrouter: {
+    placeholder: 'sk-or-v1-…',
+    hint:        'Free models available · openrouter.ai',
+    link:        'https://openrouter.ai/keys',
+    linkText:    'Get free key →',
+    badge:       'Powered by OpenRouter',
+  },
+};
 
 /* ── Color scales ────────────────────────────────────────────────────────── */
 const COLOR_SCALES = {
@@ -41,7 +64,8 @@ function getColorFromScale(schemeName, t) {
 
 /* ── App state ───────────────────────────────────────────────────────────── */
 const state = {
-  conversationHistory: [],
+  conversationHistory: [],  // Anthropic format
+  openaiHistory:       [],  // OpenAI format (Groq / OpenRouter)
   datasets:    {},   // { id: { rawData, renderConfig } }
   filters:     {},   // { id: { fieldName: { type, min, max, current_min, current_max } } }
   cesiumLayers:{},   // { id: PointPrimitiveCollection | DataSource }
@@ -351,8 +375,8 @@ const TOOLS = [
 
 /* ── Anthropic API (browser-side direct call) ────────────────────────────── */
 async function callClaude(messages) {
-  const key = localStorage.getItem('anthropicKey');
-  if (!key) throw new Error('No Anthropic API key. Click ⚙️ Settings to add yours.');
+  const key = localStorage.getItem('apiKey') || localStorage.getItem('anthropicKey');
+  if (!key) throw new Error('No API key configured. Click ⚙️ Settings.');
 
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -363,7 +387,7 @@ async function callClaude(messages) {
       'content-type':                           'application/json',
     },
     body: JSON.stringify({
-      model:      MODEL,
+      model:      'claude-sonnet-4-6',
       max_tokens: 4096,
       system:     SYSTEM_PROMPT,
       tools:      TOOLS,
@@ -380,8 +404,67 @@ async function callClaude(messages) {
   return res.json();
 }
 
-/* ── Agentic loop ────────────────────────────────────────────────────────── */
+/* ── OpenAI-compatible API (Groq / OpenRouter) ───────────────────────────── */
+function toOpenAITools(anthropicTools) {
+  return anthropicTools.map(t => ({
+    type: 'function',
+    function: { name: t.name, description: t.description, parameters: t.input_schema },
+  }));
+}
+
+async function callOpenAI(messages, provider) {
+  const key = localStorage.getItem('apiKey');
+  if (!key) throw new Error('No API key configured. Click ⚙️ Settings.');
+
+  const endpoints = {
+    groq:       'https://api.groq.com/openai/v1/chat/completions',
+    openrouter: 'https://openrouter.ai/api/v1/chat/completions',
+  };
+  const models = {
+    groq:       'llama-3.3-70b-versatile',
+    openrouter: 'meta-llama/llama-3.3-70b-instruct:free',
+  };
+
+  const headers = {
+    'Authorization': `Bearer ${key}`,
+    'Content-Type':  'application/json',
+  };
+  if (provider === 'openrouter') {
+    headers['HTTP-Referer'] = window.location.origin;
+    headers['X-Title']      = 'Ask Cesium AI';
+  }
+
+  const res = await fetch(endpoints[provider], {
+    method:  'POST',
+    headers,
+    body: JSON.stringify({
+      model:       models[provider],
+      max_tokens:  4096,
+      messages:    [{ role: 'system', content: SYSTEM_PROMPT }, ...messages],
+      tools:       toOpenAITools(TOOLS),
+      tool_choice: 'auto',
+    }),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    const msg = err?.error?.message || `API error ${res.status}`;
+    if (res.status === 401 || res.status === 403) throw new Error(`Invalid API key for ${provider}. Click ⚙️ Settings.`);
+    throw new Error(msg);
+  }
+  return res.json();
+}
+
+/* ── Agentic loop dispatcher ─────────────────────────────────────────────── */
 async function runQuery(userMessage) {
+  const provider = localStorage.getItem('provider') || 'groq';
+  return provider === 'anthropic'
+    ? runQueryAnthropic(userMessage)
+    : runQueryOpenAI(userMessage, provider);
+}
+
+/* ── Anthropic agentic loop ──────────────────────────────────────────────── */
+async function runQueryAnthropic(userMessage) {
   const pendingActions = [];
   const msgs = [
     ...state.conversationHistory,
@@ -418,12 +501,57 @@ async function runQuery(userMessage) {
       msgs.push({ role: 'user', content: toolResults });
       continue;
     }
-
-    // Unexpected stop reason
     break;
   }
 
   state.conversationHistory = msgs;
+  return { text: 'Analysis complete.', actions: pendingActions };
+}
+
+/* ── OpenAI-compatible agentic loop (Groq / OpenRouter) ─────────────────── */
+async function runQueryOpenAI(userMessage, provider) {
+  const pendingActions = [];
+  const msgs = [
+    ...state.openaiHistory,
+    { role: 'user', content: userMessage },
+  ];
+
+  for (let i = 0; i < MAX_LOOPS; i++) {
+    let response;
+    try {
+      response = await callOpenAI(msgs, provider);
+    } catch (err) {
+      return { text: `Error: ${err.message}`, actions: pendingActions };
+    }
+
+    const choice = response.choices?.[0];
+    if (!choice) return { text: 'No response received.', actions: pendingActions };
+
+    const msg = choice.message;
+    msgs.push({
+      role:       'assistant',
+      content:    msg.content || null,
+      tool_calls: msg.tool_calls,
+    });
+
+    if (choice.finish_reason === 'stop' || !msg.tool_calls?.length) {
+      state.openaiHistory = msgs;
+      return { text: msg.content || '', actions: pendingActions };
+    }
+
+    for (const toolCall of msg.tool_calls) {
+      let toolInput = {};
+      try { toolInput = JSON.parse(toolCall.function.arguments); } catch (_) {}
+      const result = await dispatchTool(toolCall.function.name, toolInput, pendingActions);
+      msgs.push({
+        role:         'tool',
+        tool_call_id: toolCall.id,
+        content:      JSON.stringify(result),
+      });
+    }
+  }
+
+  state.openaiHistory = msgs;
   return { text: 'Analysis complete.', actions: pendingActions };
 }
 
@@ -1049,13 +1177,28 @@ function setInputEnabled(enabled) {
 }
 
 /* ── Setup modal ─────────────────────────────────────────────────────────── */
+function updateKeyFieldForProvider() {
+  const provider = document.getElementById('input-provider')?.value || 'groq';
+  const info = PROVIDER_INFO[provider] || PROVIDER_INFO.groq;
+  document.getElementById('input-api-key').placeholder = info.placeholder;
+  document.getElementById('api-key-hint').textContent   = info.hint;
+  const link = document.getElementById('api-key-link');
+  link.href        = info.link;
+  link.textContent = info.linkText;
+}
+
 function showSetupModal() {
   const modal = document.getElementById('setup-modal');
   modal.classList.remove('hidden');
-  document.getElementById('input-anthropic-key').value = localStorage.getItem('anthropicKey') || '';
-  document.getElementById('input-cesium-token').value  = localStorage.getItem('cesiumToken')  || '';
-  document.getElementById('input-firms-key').value     = localStorage.getItem('firmsKey')     || '';
+  const provider = localStorage.getItem('provider') || 'groq';
+  document.getElementById('input-provider').value  = provider;
+  // Prefer new unified key, fall back to legacy anthropicKey
+  const existingKey = localStorage.getItem('apiKey') || localStorage.getItem('anthropicKey') || '';
+  document.getElementById('input-api-key').value   = existingKey;
+  document.getElementById('input-cesium-token').value = localStorage.getItem('cesiumToken') || '';
+  document.getElementById('input-firms-key').value    = localStorage.getItem('firmsKey')    || '';
   document.getElementById('modal-error').classList.add('hidden');
+  updateKeyFieldForProvider();
 }
 
 function hideSetupModal() {
@@ -1063,22 +1206,32 @@ function hideSetupModal() {
 }
 
 function saveKeys() {
-  const key     = document.getElementById('input-anthropic-key').value.trim();
-  const cesium  = document.getElementById('input-cesium-token').value.trim();
-  const firms   = document.getElementById('input-firms-key').value.trim();
-  const errEl   = document.getElementById('modal-error');
+  const provider = document.getElementById('input-provider').value;
+  const key      = document.getElementById('input-api-key').value.trim();
+  const cesium   = document.getElementById('input-cesium-token').value.trim();
+  const firms    = document.getElementById('input-firms-key').value.trim();
+  const errEl    = document.getElementById('modal-error');
 
   if (!key) {
-    errEl.textContent = 'Anthropic API key is required.';
+    errEl.textContent = 'API key is required.';
     errEl.classList.remove('hidden');
     return;
   }
 
-  localStorage.setItem('anthropicKey', key);
+  localStorage.setItem('provider', provider);
+  localStorage.setItem('apiKey',   key);
   if (cesium) localStorage.setItem('cesiumToken', cesium);
   else        localStorage.removeItem('cesiumToken');
   if (firms)  localStorage.setItem('firmsKey', firms);
   else        localStorage.removeItem('firmsKey');
+
+  // Update header badge
+  const badge = document.getElementById('header-badge');
+  if (badge) badge.textContent = PROVIDER_INFO[provider]?.badge || 'AI Powered';
+
+  // Reset conversation history on provider/key change
+  state.conversationHistory = [];
+  state.openaiHistory       = [];
 
   hideSetupModal();
   initCesium();
@@ -1093,7 +1246,8 @@ async function handleSend() {
   input.value = '';
   input.style.height = '';
 
-  if (!localStorage.getItem('anthropicKey')) {
+  const apiKey = localStorage.getItem('apiKey') || localStorage.getItem('anthropicKey');
+  if (!apiKey) {
     showSetupModal();
     return;
   }
@@ -1120,6 +1274,7 @@ async function handleSend() {
 /* ── New conversation ────────────────────────────────────────────────────── */
 function newConversation() {
   state.conversationHistory = [];
+  state.openaiHistory       = [];
   const messages = document.getElementById('messages');
   messages.innerHTML = `
     <div id="welcome">
@@ -1162,25 +1317,28 @@ function initCesium() {
   loading.style.display = 'flex';
 
   try {
-    const viewer = new Cesium.Viewer('cesiumContainer', {
-      terrainProvider:    token
-        ? Cesium.createWorldTerrain()
-        : new Cesium.EllipsoidTerrainProvider(),
-      imageryProvider:    token
-        ? undefined
-        : new Cesium.TileMapServiceImageryProvider({ url: Cesium.buildModuleUrl('Assets/Textures/NaturalEarthII') }),
-      animation:          false,
-      baseLayerPicker:    false,
-      fullscreenButton:   false,
-      geocoder:           false,
-      homeButton:         false,
-      infoBox:            true,
-      sceneModePicker:    false,
-      selectionIndicator: true,
-      timeline:           false,
+    // Terrain: Cesium.createWorldTerrain() was removed in 1.107+; use Terrain.fromWorldTerrain()
+    const viewerOptions = {
+      ...(token ? { terrain: Cesium.Terrain.fromWorldTerrain() } : {
+        terrainProvider: new Cesium.EllipsoidTerrainProvider(),
+        imageryProvider: new Cesium.TileMapServiceImageryProvider({
+          url: Cesium.buildModuleUrl('Assets/Textures/NaturalEarthII'),
+        }),
+      }),
+      animation:           false,
+      baseLayerPicker:     false,
+      fullscreenButton:    false,
+      geocoder:            false,
+      homeButton:          false,
+      infoBox:             true,
+      sceneModePicker:     false,
+      selectionIndicator:  true,
+      timeline:            false,
       navigationHelpButton: false,
-      creditContainer:    document.createElement('div'),
-    });
+      creditContainer:     document.createElement('div'),
+    };
+
+    const viewer = new Cesium.Viewer('cesiumContainer', viewerOptions);
 
     viewer.scene.globe.enableLighting = true;
     viewer.scene.backgroundColor = Cesium.Color.BLACK;
@@ -1209,15 +1367,23 @@ function initCesium() {
 
 /* ── Entry point ─────────────────────────────────────────────────────────── */
 window.addEventListener('load', () => {
-  // Show modal if no API key
-  if (!localStorage.getItem('anthropicKey')) {
+  // Show modal if no API key configured
+  const hasKey = localStorage.getItem('apiKey') || localStorage.getItem('anthropicKey');
+  if (!hasKey) {
     showSetupModal();
   } else {
+    // Sync header badge with stored provider
+    const provider = localStorage.getItem('provider') || 'groq';
+    const badge = document.getElementById('header-badge');
+    if (badge) badge.textContent = PROVIDER_INFO[provider]?.badge || 'AI Powered';
     initCesium();
   }
 
   // Modal save button
   document.getElementById('save-keys-btn').addEventListener('click', saveKeys);
+
+  // Update key field hints when provider changes
+  document.getElementById('input-provider').addEventListener('change', updateKeyFieldForProvider);
 
   // Settings button
   document.getElementById('settings-btn').addEventListener('click', showSetupModal);

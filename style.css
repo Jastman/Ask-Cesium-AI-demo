@@ -124,6 +124,27 @@ html, body {
 
 .modal-box input::placeholder { color: var(--text-3); font-family: var(--font); }
 
+.modal-box select {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 9px 13px;
+  color: var(--text-1);
+  font-size: 13px;
+  font-family: var(--font);
+  width: 100%;
+  cursor: pointer;
+  outline: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%2394a3b8' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 34px;
+  transition: border-color 0.15s;
+}
+
+.modal-box select:focus { border-color: var(--accent); }
+
 .modal-hint {
   font-size: 11px;
   color: var(--text-3);
