@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ask Cesium AI — Geospatial Data Explorer</title>
+
+  <script src="https://cesium.com/downloads/cesiumjs/releases/1.122/Build/Cesium/Cesium.js"></script>
+  <link href="https://cesium.com/downloads/cesiumjs/releases/1.122/Build/Cesium/Widgets/widgets.css" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<!-- ── Setup / Settings Modal ─────────────────────────────────────────────── -->
+<div id="setup-modal" class="modal-overlay">
+  <div class="modal-box">
+    <div class="modal-logo">🌍</div>
+    <h2>Ask Cesium AI</h2>
+    <p class="modal-subtitle">AI-powered geospatial data explorer. Ask anything about Earth — the AI finds verified data and builds the map for you.</p>
+
+    <div class="modal-section">
+      <label class="modal-label">
+        Anthropic API Key <span class="required">*</span>
+        <a href="https://console.anthropic.com/" target="_blank" class="get-key-link">Get free key →</a>
+      </label>
+      <input id="input-anthropic-key" type="password" placeholder="sk-ant-api03-..." autocomplete="off" />
+    </div>
+
+    <div class="modal-section">
+      <label class="modal-label">
+        Cesium Ion Token <span class="optional">(optional)</span>
+        <a href="https://cesium.com/ion/" target="_blank" class="get-key-link">Free token →</a>
+      </label>
+      <input id="input-cesium-token" type="password" placeholder="eyJhbGci..." autocomplete="off" />
+      <span class="modal-hint">Enables high-res terrain and Bing Maps imagery</span>
+    </div>
+
+    <div class="modal-section">
+      <label class="modal-label">
+        NASA FIRMS Map Key <span class="optional">(for fire/wildfire data)</span>
+        <a href="https://firms.modaps.eosdis.nasa.gov/api/map_key/" target="_blank" class="get-key-link">Register free →</a>
+      </label>
+      <input id="input-firms-key" type="password" placeholder="Your FIRMS MAP_KEY..." autocomplete="off" />
+      <span class="modal-hint">Required for NASA satellite wildfire data</span>
+    </div>
+
+    <div id="modal-error" class="modal-error hidden"></div>
+
+    <button id="save-keys-btn" class="modal-btn-primary">Start Exploring</button>
+    <p class="modal-footer">Keys are stored locally in your browser and never sent to any server except the respective API endpoints.</p>
+  </div>
+</div>
+
+<!-- ── App ───────────────────────────────────────────────────────────────── -->
+<div id="app">
+
+  <header id="header">
+    <span class="header-logo">🌍</span>
+    <h1>Ask Cesium AI</h1>
+    <span class="header-badge">Powered by Claude</span>
+    <div class="spacer"></div>
+    <button id="settings-btn" title="Settings / API Keys">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+      </svg>
+      Settings
+    </button>
+    <button id="new-chat-btn" title="New conversation">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M12 5v14M5 12h14"/>
+      </svg>
+      New map
+    </button>
+  </header>
+
+  <main id="main">
+
+    <!-- Globe pane -->
+    <div id="cesium-container">
+      <div id="cesiumContainer"></div>
+
+      <!-- Legend overlay (bottom-left of globe) -->
+      <div id="legend-panel" class="globe-overlay hidden">
+        <div class="overlay-drag-handle"></div>
+        <button class="overlay-close" id="legend-close">✕</button>
+      </div>
+
+      <!-- Filter overlay (bottom-right of globe) -->
+      <div id="filter-panel" class="globe-overlay hidden">
+        <div class="overlay-drag-handle"></div>
+        <button class="overlay-close" id="filter-close">✕</button>
+        <div id="filter-content"></div>
+      </div>
+
+      <!-- Loading overlay -->
+      <div id="cesium-loading">
+        <div class="spinner"></div>
+        <p>Initializing 3D globe…</p>
+      </div>
+    </div>
+
+    <!-- Chat panel -->
+    <div id="chat-panel">
+      <div id="messages">
+        <div id="welcome">
+          <div class="welcome-icon">🌍</div>
+          <h2>Ask Cesium AI</h2>
+          <p>Describe a geospatial dataset and I'll find the verified data and build the map — with legends, filters, and real-time data.</p>
+          <div class="starter-prompts">
+            <button class="starter-btn" data-query="Show me earthquake activity in Japan from 2024, colored by magnitude with depth filters">
+              <span>🌋</span> Earthquakes in Japan (2024) by magnitude
+            </button>
+            <button class="starter-btn" data-query="Map active wildfires detected by NASA satellites in California in the last 7 days, colored by fire intensity">
+              <span>🔥</span> Active wildfires in California this week
+            </button>
+            <button class="starter-btn" data-query="Find all major airports within 500km of New York City">
+              <span>✈️</span> Airports near New York City
+            </button>
+            <button class="starter-btn" data-query="Map magnitude 6+ earthquakes worldwide in the last 30 days">
+              <span>📡</span> Global major earthquakes (last 30 days)
+            </button>
+            <button class="starter-btn" data-query="Show hospitals and emergency medical centers in London">
+              <span>🏥</span> Hospitals in London
+            </button>
+            <button class="starter-btn" data-query="Show me the 10 highest mountain peaks in the Alps with their elevations">
+              <span>🏔️</span> Highest Alpine peaks
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div id="input-area">
+        <div id="input-row">
+          <textarea
+            id="query-input"
+            placeholder="Describe the geospatial data you want to explore…"
+            rows="1"
+            autocomplete="off"
+          ></textarea>
+          <button id="send-btn" title="Send (Enter)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M22 2L11 13"/><path d="M22 2L15 22 11 13 2 9l20-7z"/>
+            </svg>
+          </button>
+        </div>
+        <div id="input-hint">Enter to send · Shift+Enter for new line · Data is never fabricated</div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<div id="error-toast"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
